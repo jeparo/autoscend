@@ -16,6 +16,26 @@ item getTentativeMaximizeEquip(slot s)
 	return get_property(getMaximizeSlotPref(s)).to_item();
 }
 
+boolean accessoryAlreadyTentativelyEquipped(item it)
+{
+	if (it.to_slot() != $slot[acc1])
+	{
+		return false;
+	}
+	foreach ss in $slots[acc1, acc2, acc3]
+	{
+		if (it == get_property("_auto_maximize_equip_" + ss).to_item())
+		{
+			return true;
+		}
+		if (it == get_property("auto_equipment_override_" + ss).to_item())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 boolean autoEquip(slot s, item it)
 {
 	if(!possessEquipment(it) || !auto_can_equip(it))
@@ -23,44 +43,57 @@ boolean autoEquip(slot s, item it)
 		return false;
 	}
 
-	if(s == $slot[acc3] &&
-		(it.to_string() == get_property("_auto_maximize_equip_acc1")) ||
-		(it.to_string() == get_property("_auto_maximize_equip_acc2")) ||
-		(it.to_string() == get_property("_auto_maximize_equip_acc3")))
+	// Is the accessory already equipped?
+	if (it == get_property("_auto_maximize_equip_" + s).to_item())
 	{
-		auto_log_warning("Ignoring duplicate equip of accessory " + it);
+		auto_log_warning("Ignoring duplicate equip of " + it);
 		return true;
 	}
-
-	// This logic lets us force the equipping of multiple accessories with minimal conflict
-	boolean acc1_empty = ("" == get_property("_auto_maximize_equip_acc1")) && !contains_text(get_property("auto_maximize_current"), "acc1");
-	boolean acc2_empty = ("" == get_property("_auto_maximize_equip_acc2")) && !contains_text(get_property("auto_maximize_current"), "acc2");
-	boolean acc3_empty = ("" == get_property("_auto_maximize_equip_acc3")) && !contains_text(get_property("auto_maximize_current"), "acc3");
-	if((item_type(it) == "accessory") && s == $slot[acc3] && !acc3_empty)
-	{
-		if(acc2_empty)
-		{
-			s = $slot[acc2];
-		}
-		else if(acc1_empty)
-		{
-			s = $slot[acc1];
-		}
-		else
-		{
-			auto_log_warning("We can not equip " + it + " because our slots are all full.", "red");
-			return false;
-		}
-	}
+	if (accessoryAlreadyTentativelyEquipped(it)) return true;
 
 	auto_log_info("Equipping " + it + " to slot " + s, "gold");
+	item previous = getTentativeMaximizeEquip(s);
+	if (previous != $item[none])
+	{
+		auto_log_warning("Clobbering previous equipment in slot " + s + ": " + previous);
+	}
 
 	return tryAddItemToMaximize(s, it);
 }
 
 boolean autoEquip(item it)
 {
-	return autoEquip(it.to_slot(), it);
+	slot s = it.to_slot();
+
+	// Is it already scheduled to be equipped?
+	if (s == $slot[acc1])
+	{
+		if (accessoryAlreadyTentativelyEquipped(it)) return true;
+
+		// Find an open slot to put the accessory in.
+		boolean acc_slot_empty(slot ss)
+		{
+			return (get_property("_auto_maximize_equip_" + ss) == "") && !contains_text(get_property("auto_maximize_current"), ss.to_string());
+		}
+
+		if (acc_slot_empty($slot[acc1]))      s = $slot[acc1];
+		else if (acc_slot_empty($slot[acc2])) s = $slot[acc2];
+		else if (acc_slot_empty($slot[acc3])) s = $slot[acc3];
+		else
+		{
+			// All slots are full. Uh. It seems we sometimes use acc3 for core quest stuff,
+			// so I guess we clobber acc2?
+			auto_log_warning("Couldn't find empty accessory space for " + it + ", clobbering acc2.", "red");
+			string previously_equipped;
+			foreach ss in $slots[acc1, acc2, acc3]
+			{
+				previously_equipped += ss.to_string() + "=" + getTentativeMaximizeEquip(ss) + "  ";
+			}
+			auto_log_warning("Previously equipped: " + previously_equipped, "red");
+		}
+	}
+
+	return autoEquip(s, it);
 }
 
 // specifically intended for forcing something in to a specific slot,
